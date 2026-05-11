@@ -1,6 +1,6 @@
 
 
-# FintasTech · Research Lab
+# FintasTech · StockChain Research Lab
 
 **An open-source lab where rule-based multi-agent equity research meets a transparent, on-chain auditable paper-trading vault.**
 
