@@ -1,7 +1,7 @@
 <h1 align="center">FintasTech · StockChain Research Lab</h1>
 
 <p align="center">
-  <img src="logo/stockchain.svg" alt="StockChain logo" width="260" />
+  <img src="logo/stockchain.svg" alt="StockChain logo" width="230" />
 </p>
 <p align="center">
   <b>An open-source lab where rule-based multi-agent equity research meets a transparent, on-chain auditable paper-trading vault.</b><br/>
