@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fintastech"
-version = "0.3.0"
+version = "0.5.0"
 description = "Open-source educational framework for rule-based multi-agent stock research and on-chain paper-trading simulation. NOT investment advice."
 readme = "README.md"
 license = { text = "MIT" }
@@ -41,6 +41,13 @@ where = ["src"]
 [tool.ruff]
 line-length = 100
 target-version = "py311"
+
+[tool.ruff.lint.per-file-ignores]
+# masters.py deliberately uses dense `score += n; parts.append(...)` one-liners
+# so each master's scoring rules read as a compact table.
+"src/fintastech/agents/masters.py" = ["E702"]
+# advisor.py keeps its numeric-coercion helpers above the analyst imports.
+"src/fintastech/agents/advisor.py" = ["E402"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

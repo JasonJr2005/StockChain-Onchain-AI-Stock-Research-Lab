@@ -9,8 +9,11 @@ intended solely for simulation and study.
 """
 
 import math
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date
 from typing import Any
+
+from fintastech.utils.cache import TTLCache
 
 
 def _coerce_float(v: Any) -> float | None:
@@ -82,6 +85,11 @@ _DIRECTION_CN = {
     SignalDirection.NEUTRAL: "中性",
 }
 
+# Upper bound on concurrent per-symbol research jobs. Each job is I/O-bound
+# (Yahoo history + fundamentals), so a modest pool gives a near-linear speedup
+# on multi-symbol requests without hammering the data source.
+_MAX_RESEARCH_WORKERS = 8
+
 
 class ResearchOrchestrator:
     """Runs every analyst module and aggregates their research signals.
@@ -97,6 +105,12 @@ class ResearchOrchestrator:
         self.fundamental = FundamentalAnalyst()
         self.valuation = ValuationAnalyst()
         self.sentiment = SentimentAnalyst()
+        # Live analysis results are cached briefly so a user clicking around
+        # the UI (analysis page → simulation → vault) doesn't recompute the
+        # same 18-analyst bundle several times a minute. Per-instance, because
+        # two orchestrators may sit on different data providers. Backtests
+        # (``as_of`` set) bypass this cache entirely.
+        self._result_cache = TTLCache(ttl_seconds=120.0, max_entries=256)
 
     def analyze(
         self,
@@ -107,6 +121,67 @@ class ResearchOrchestrator:
         stock_info: dict[str, Any] | None = None,
     ) -> ComprehensiveAnalysis:
         profile = risk_profile or RiskProfile()
+
+        # Short-lived result cache for *live* analysis only. Historical
+        # (``as_of``) and caller-supplied-info runs always compute fresh.
+        cache_key: str | None = None
+        if as_of is None and stock_info is None:
+            cache_key = f"{symbol.upper()}|{profile.tolerance.value}"
+            cached = self._result_cache.get(cache_key)
+            if cached is not None:
+                return cached
+
+        result = self._analyze_uncached(
+            symbol, as_of=as_of, profile=profile, stock_info=stock_info
+        )
+        if cache_key is not None and result.current_price > 0:
+            self._result_cache.set(cache_key, result)
+        return result
+
+    def analyze_many(
+        self,
+        symbols: list[str],
+        *,
+        as_of: date | None = None,
+        risk_profile: RiskProfile | None = None,
+        max_workers: int = _MAX_RESEARCH_WORKERS,
+    ) -> dict[str, ComprehensiveAnalysis | Exception]:
+        """Analyze several symbols concurrently.
+
+        Research per symbol is I/O-bound (network fetches), so a small thread
+        pool turns a 7-symbol watch-list from ~7 sequential round-trips into
+        roughly one. Returns a mapping ``symbol -> analysis`` where a failed
+        symbol maps to the raised exception instead (callers decide whether to
+        surface or skip it) — one bad ticker never sinks the batch.
+        """
+        unique = list(dict.fromkeys(s.strip().upper() for s in symbols if s and s.strip()))
+        results: dict[str, ComprehensiveAnalysis | Exception] = {}
+        if not unique:
+            return results
+        workers = max(1, min(max_workers, len(unique)))
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="research") as pool:
+            futures = {
+                pool.submit(
+                    self.analyze, sym, as_of=as_of, risk_profile=risk_profile
+                ): sym
+                for sym in unique
+            }
+            for fut in as_completed(futures):
+                sym = futures[fut]
+                try:
+                    results[sym] = fut.result()
+                except Exception as exc:  # noqa: BLE001 — deliberately fail-soft
+                    results[sym] = exc
+        return results
+
+    def _analyze_uncached(
+        self,
+        symbol: str,
+        *,
+        as_of: date | None,
+        profile: RiskProfile,
+        stock_info: dict[str, Any] | None,
+    ) -> ComprehensiveAnalysis:
         end = as_of or date.today()
         ohlcv = self.provider.get_history(symbol, end=end)
 

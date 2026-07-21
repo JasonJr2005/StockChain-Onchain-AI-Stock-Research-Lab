@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+.eggs/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Env & secrets
+.env
+.env.local
+*.pem
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+
+# Data caches (optional local storage)
+data/cache/
+
+# Local process manager + logs (start.sh / stop.sh)
+.run/
+logs/*.log
+
+# Local runtime state (paper-trading ledger regenerates itself)
+data/simulation.json
+
+# Claude Code local config
+.claude/

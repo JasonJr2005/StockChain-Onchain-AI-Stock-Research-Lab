@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Stop FastAPI + Next.js processes started by ./start.sh
+# Stop everything started by ./start.sh (FastAPI + Next.js + Hardhat chain).
 set -u
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -22,9 +22,11 @@ stop_pid() {
 
 stop_pid .run/backend.pid  "backend"
 stop_pid .run/frontend.pid "frontend"
+stop_pid .run/chain.pid    "chain"
 
 # Belt-and-suspenders: kill leftovers matching our commands.
 pkill -f "uvicorn fintastech.api.main:app" 2>/dev/null || true
 pkill -f "next dev" 2>/dev/null || true
+pkill -f "hardhat node" 2>/dev/null || true
 
 echo "done."

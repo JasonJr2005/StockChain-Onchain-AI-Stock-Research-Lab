@@ -30,6 +30,8 @@ class BacktestResult:
     trades: int
     equity_curve: list[dict]  # [{date, value}]
     benchmark_return_pct: float | None = None
+    benchmark_curve: list[dict] | None = None  # equal-weight buy & hold
+    volatility_pct: float | None = None  # annualized, of daily strategy returns
     notes: str = ""
     loaded_symbols: list[str] = None  # type: ignore[assignment]
     dropped_symbols: list[str] = None  # type: ignore[assignment]
@@ -100,25 +102,49 @@ class BacktestEngine:
                 dropped_symbols=dropped,
             )
 
+        # Pre-align every ticker's close series onto the trading-day grid with
+        # forward-fill (last-known price on non-trading gaps). This replaces a
+        # per-day boolean mask over the whole frame — O(days) instead of
+        # O(days²) — which matters for multi-year, multi-symbol runs.
+        day_grid = [day.date() for day in trading_days]
+        grid_index = pd.Index(day_grid)
+        aligned: dict[str, np.ndarray] = {}
+        for t, df in prices.items():
+            s = df["close"].astype(float).copy()
+            s.index = pd.Index([ts.date() for ts in s.index])
+            s = s[~s.index.duplicated(keep="last")].sort_index()
+            aligned[t] = s.reindex(grid_index, method="ffill").to_numpy()
+
         cash = self.initial_capital
         holdings: dict[str, float] = {}  # ticker -> shares
         equity_curve: list[dict] = []
+        benchmark_curve: list[dict] = []
         daily_returns: list[float] = []
         prev_value = self.initial_capital
         last_rebalance = start - timedelta(days=self.rebalance_freq + 1)
         total_trades = 0
 
-        for day in trading_days:
-            d = day.date()
+        # Equal-weight buy & hold benchmark: each loaded symbol gets an equal
+        # slice at its first available price; unlisted slices sit in cash.
+        bench_slice = self.initial_capital / len(prices)
+        bench_entry: dict[str, float] = {}
 
+        for i, d in enumerate(day_grid):
             day_prices: dict[str, float] = {}
-            for t, df in prices.items():
-                mask = df.index.date <= d
-                if mask.any():
-                    day_prices[t] = float(df.loc[mask, "close"].iloc[-1])
+            for t, arr in aligned.items():
+                px = arr[i]
+                if np.isfinite(px) and px > 0:
+                    day_prices[t] = float(px)
 
             if not day_prices:
                 continue
+
+            for t, px in day_prices.items():
+                bench_entry.setdefault(t, px)
+            bench_value = sum(
+                bench_slice * (day_prices[t] / bench_entry[t]) if t in day_prices else bench_slice
+                for t in prices
+            )
 
             port_value = cash + sum(
                 day_prices.get(t, 0) * shares for t, shares in holdings.items()
@@ -129,25 +155,26 @@ class BacktestEngine:
 
                 target_weights: dict[str, float] = {}
                 confidences: dict[str, float] = {}
+                analyses = self.orchestrator.analyze_many(
+                    list(prices), as_of=d, risk_profile=self.risk_profile
+                )
                 for t in prices:
-                    try:
-                        result = self.orchestrator.analyze(
-                            t, as_of=d, risk_profile=self.risk_profile,
-                        )
-                        w = (result.illustrative_weight_pct or 0.0) / 100.0
-                        confidences[t] = float(result.overall_confidence or 0.0)
-                        if result.overall_signal == SignalDirection.BULLISH:
-                            target_weights[t] = max(0.0, w)
-                        elif result.overall_signal == SignalDirection.BEARISH:
-                            target_weights[t] = 0.0
-                        else:
-                            # Neutral — keep a small allocation proportional
-                            # to confidence so the backtest isn't dead silent
-                            # when the model has no strong view.
-                            target_weights[t] = max(0.0, w * 0.5)
-                    except Exception:
+                    result = analyses.get(t)
+                    if result is None or isinstance(result, Exception):
                         target_weights[t] = 0.0
                         confidences[t] = 0.0
+                        continue
+                    w = (result.illustrative_weight_pct or 0.0) / 100.0
+                    confidences[t] = float(result.overall_confidence or 0.0)
+                    if result.overall_signal == SignalDirection.BULLISH:
+                        target_weights[t] = max(0.0, w)
+                    elif result.overall_signal == SignalDirection.BEARISH:
+                        target_weights[t] = 0.0
+                    else:
+                        # Neutral — keep a small allocation proportional
+                        # to confidence so the backtest isn't dead silent
+                        # when the model has no strong view.
+                        target_weights[t] = max(0.0, w * 0.5)
 
                 # Safety net: if the rule-based model happens to emit zero
                 # allocation for every ticker on this rebalance date, fall
@@ -189,6 +216,7 @@ class BacktestEngine:
             daily_returns.append(daily_ret)
             prev_value = port_value
             equity_curve.append({"date": str(d), "value": round(port_value, 2)})
+            benchmark_curve.append({"date": str(d), "value": round(bench_value, 2)})
 
         final = equity_curve[-1]["value"] if equity_curve else self.initial_capital
         total_ret = final / self.initial_capital - 1
@@ -200,11 +228,19 @@ class BacktestEngine:
         max_dd = min(drawdowns) if drawdowns else 0
 
         sharpe = None
+        volatility_pct = None
         if daily_returns:
             arr = np.array(daily_returns)
             std = arr.std()
             if std > 0:
                 sharpe = round(float((arr.mean() / std) * np.sqrt(252)), 2)
+                volatility_pct = round(float(std * np.sqrt(252) * 100), 2)
+
+        benchmark_return_pct = None
+        if benchmark_curve:
+            benchmark_return_pct = round(
+                (benchmark_curve[-1]["value"] / self.initial_capital - 1) * 100, 2
+            )
 
         notes_parts: list[str] = []
         if total_trades == 0:
@@ -226,6 +262,9 @@ class BacktestEngine:
             sharpe_ratio=sharpe,
             trades=total_trades,
             equity_curve=equity_curve,
+            benchmark_return_pct=benchmark_return_pct,
+            benchmark_curve=benchmark_curve,
+            volatility_pct=volatility_pct,
             notes=" ".join(notes_parts),
             loaded_symbols=list(prices.keys()),
             dropped_symbols=dropped,

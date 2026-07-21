@@ -1,5 +1,7 @@
 "use client";
 
+import { useT } from "@/lib/i18n/context";
+
 interface Props {
   signal: "bullish" | "bearish" | "neutral";
   size?: "sm" | "md" | "lg";
@@ -7,21 +9,21 @@ interface Props {
 
 const CONFIG = {
   bullish: {
-    label: "看多",
+    key: "signal.bullish",
     bg: "bg-[rgba(52,211,153,0.1)]",
     border: "border-[rgba(52,211,153,0.25)]",
     text: "text-gain",
     dot: "bg-gain",
   },
   bearish: {
-    label: "看空",
+    key: "signal.bearish",
     bg: "bg-[rgba(248,113,113,0.1)]",
     border: "border-[rgba(248,113,113,0.25)]",
     text: "text-loss",
     dot: "bg-loss",
   },
   neutral: {
-    label: "中性",
+    key: "signal.neutral",
     bg: "bg-white/[0.04]",
     border: "border-[var(--border)]",
     text: "text-muted",
@@ -36,13 +38,14 @@ const SIZE = {
 };
 
 export default function SignalBadge({ signal, size = "md" }: Props) {
-  const c = CONFIG[signal];
+  const { t } = useT();
+  const c = CONFIG[signal] ?? CONFIG.neutral;
   return (
     <span
       className={`inline-flex items-center gap-1.5 rounded-md border font-medium ${c.bg} ${c.border} ${c.text} ${SIZE[size]}`}
     >
       <span className={`h-1.5 w-1.5 rounded-full ${c.dot}`} />
-      {c.label}
+      {t(c.key)}
     </span>
   );
 }

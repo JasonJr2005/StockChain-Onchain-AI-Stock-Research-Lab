@@ -3,6 +3,9 @@
 import { useState } from "react";
 import { runBacktest, type BacktestResponse } from "@/lib/api";
 import StockSearch from "@/components/StockSearch";
+import LineAreaChart from "@/components/LineAreaChart";
+import PageHeader from "@/components/PageHeader";
+import { fmtPct } from "@/lib/format";
 import { useT } from "@/lib/i18n/context";
 
 export default function BacktestPage() {
@@ -24,7 +27,7 @@ export default function BacktestPage() {
 
   async function submit() {
     if (symbols.length === 0) {
-      setError("请至少添加一只股票");
+      setError(t("bt.err.needSymbol"));
       return;
     }
     setError("");
@@ -41,33 +44,33 @@ export default function BacktestPage() {
       });
       setResult(resp);
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : "回测失败");
+      setError(e instanceof Error ? e.message : t("bt.err.failed"));
     } finally {
       setLoading(false);
     }
   }
 
-  const maxVal = result ? Math.max(...result.equity_curve.map((p) => p.value)) : 0;
-  const minVal = result ? Math.min(...result.equity_curve.map((p) => p.value)) : 0;
+  const benchmark = result?.benchmark_curve ?? [];
+  const excessPct =
+    result && result.benchmark_return_pct != null
+      ? result.total_return_pct - result.benchmark_return_pct
+      : null;
 
   return (
     <div className="mx-auto max-w-[1400px] px-8 py-10">
-      <div className="mb-8">
-        <div className="mb-2 inline-flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.16em] text-accent">
-          <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-          {t("backtest.tag")}
-        </div>
-        <h2 className="text-3xl font-semibold tracking-tight">{t("backtest.title")}</h2>
-        <p className="mt-1 text-sm text-muted">{t("backtest.subtitle")}</p>
-      </div>
+      <PageHeader
+        tag={t("backtest.tag")}
+        title={t("backtest.title")}
+        subtitle={t("backtest.subtitle")}
+      />
 
       <div className="grid gap-6 lg:grid-cols-[340px_1fr]">
         <div className="surface p-5 space-y-4">
           <div>
             <label className="mb-1.5 block text-[11px] uppercase tracking-wider text-dim">
-              股票池
+              {t("bt.pool")}
             </label>
-            <StockSearch onSelect={addSymbol} placeholder="添加股票…" fullWidth />
+            <StockSearch onSelect={addSymbol} placeholder={t("bt.addPlaceholder")} fullWidth />
             <div className="mt-2 flex flex-wrap gap-1.5">
               {symbols.map((s) => (
                 <span
@@ -86,7 +89,7 @@ export default function BacktestPage() {
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <Field label="起始日期">
+            <Field label={t("bt.startDate")}>
               <input
                 type="date"
                 value={startDate}
@@ -94,7 +97,7 @@ export default function BacktestPage() {
                 className="input-base"
               />
             </Field>
-            <Field label="结束日期">
+            <Field label={t("bt.endDate")}>
               <input
                 type="date"
                 value={endDate}
@@ -103,7 +106,7 @@ export default function BacktestPage() {
               />
             </Field>
           </div>
-          <Field label="初始资金（美元）">
+          <Field label={t("bt.capital")}>
             <input
               value={capital}
               onChange={(e) => setCapital(e.target.value)}
@@ -111,7 +114,7 @@ export default function BacktestPage() {
               className="input-base"
             />
           </Field>
-          <Field label="调仓周期（天）">
+          <Field label={t("bt.rebalDays")}>
             <input
               value={rebalDays}
               onChange={(e) => setRebalDays(e.target.value)}
@@ -119,19 +122,19 @@ export default function BacktestPage() {
               className="input-base"
             />
           </Field>
-          <Field label="风险偏好">
+          <Field label={t("bt.riskPref")}>
             <select
               value={risk}
               onChange={(e) => setRisk(e.target.value)}
               className="input-base"
             >
-              <option value="conservative">保守型</option>
-              <option value="moderate">稳健型</option>
-              <option value="aggressive">进取型</option>
+              <option value="conservative">{t("risk.conservative")}</option>
+              <option value="moderate">{t("risk.moderate")}</option>
+              <option value="aggressive">{t("risk.aggressive")}</option>
             </select>
           </Field>
           <button onClick={submit} disabled={loading} className="btn-primary w-full">
-            {loading ? "回测运行中…" : "开始回测"}
+            {loading ? t("bt.running") : t("bt.run")}
           </button>
           {error && <p className="text-xs text-loss">{error}</p>}
         </div>
@@ -140,13 +143,13 @@ export default function BacktestPage() {
           {loading && (
             <div className="surface flex h-64 flex-col items-center justify-center gap-3">
               <div className="h-8 w-8 animate-spin rounded-full border-2 border-accent border-t-transparent" />
-              <p className="text-sm text-muted">正在回测，加载历史数据并模拟交易…</p>
+              <p className="text-sm text-muted">{t("bt.loadingMsg")}</p>
             </div>
           )}
 
           {!loading && !result && (
             <div className="surface flex h-64 items-center justify-center p-10 text-center text-sm text-dim">
-              在左侧配置后点击「开始回测」，结果将显示在这里
+              {t("bt.emptyHint")}
             </div>
           )}
 
@@ -157,7 +160,7 @@ export default function BacktestPage() {
                   {result.notes && <p className="leading-relaxed">{result.notes}</p>}
                   {result.dropped_symbols && result.dropped_symbols.length > 0 && (
                     <p className="mt-1 text-[11px] text-dim">
-                      已跳过：
+                      {t("bt.skipped")}
                       <span className="font-mono">
                         {result.dropped_symbols.join(", ")}
                       </span>
@@ -165,7 +168,7 @@ export default function BacktestPage() {
                   )}
                   {result.loaded_symbols && result.loaded_symbols.length > 0 && (
                     <p className="mt-0.5 text-[11px] text-dim">
-                      实际参与回测：
+                      {t("bt.loaded")}
                       <span className="font-mono">
                         {result.loaded_symbols.join(", ")}
                       </span>
@@ -174,88 +177,112 @@ export default function BacktestPage() {
                 </div>
               )}
               <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-                <KPI label="最终净值" value={`$${result.final_value.toLocaleString()}`} />
                 <KPI
-                  label="总收益"
-                  value={`${result.total_return_pct >= 0 ? "+" : ""}${result.total_return_pct.toFixed(2)}%`}
+                  label={t("bt.kpi.final")}
+                  value={`$${result.final_value.toLocaleString()}`}
+                />
+                <KPI
+                  label={t("bt.kpi.total")}
+                  value={fmtPct(result.total_return_pct)}
                   tone={result.total_return_pct >= 0 ? "gain" : "loss"}
                 />
                 <KPI
-                  label="年化收益"
-                  value={`${result.annualized_return_pct >= 0 ? "+" : ""}${result.annualized_return_pct.toFixed(2)}%`}
+                  label={t("bt.kpi.annual")}
+                  value={fmtPct(result.annualized_return_pct)}
                   tone={result.annualized_return_pct >= 0 ? "gain" : "loss"}
                 />
                 <KPI
-                  label="最大回撤"
+                  label={t("bt.kpi.mdd")}
                   value={`${result.max_drawdown_pct.toFixed(2)}%`}
                   tone="loss"
                 />
                 <KPI
-                  label="夏普比率"
+                  label={t("bt.kpi.benchmark")}
+                  value={
+                    result.benchmark_return_pct != null
+                      ? fmtPct(result.benchmark_return_pct)
+                      : "—"
+                  }
+                  tone={
+                    result.benchmark_return_pct != null
+                      ? result.benchmark_return_pct >= 0
+                        ? "gain"
+                        : "loss"
+                      : undefined
+                  }
+                />
+                <KPI
+                  label={t("bt.kpi.excess")}
+                  value={excessPct != null ? fmtPct(excessPct) : "—"}
+                  tone={
+                    excessPct != null ? (excessPct >= 0 ? "gain" : "loss") : undefined
+                  }
+                />
+                <KPI
+                  label={t("bt.kpi.sharpe")}
                   value={result.sharpe_ratio != null ? result.sharpe_ratio.toFixed(2) : "—"}
                 />
-                <KPI label="交易次数" value={String(result.trades)} />
                 <KPI
-                  label="初始资金"
+                  label={t("bt.kpi.vol")}
+                  value={
+                    result.volatility_pct != null
+                      ? `${result.volatility_pct.toFixed(2)}%`
+                      : "—"
+                  }
+                />
+                <KPI label={t("bt.kpi.trades")} value={String(result.trades)} />
+                <KPI
+                  label={t("bt.capital")}
                   value={`$${result.initial_capital.toLocaleString()}`}
                 />
-                <KPI label="数据天数" value={String(result.equity_curve.length)} />
+                <KPI label={t("bt.kpi.days")} value={String(result.equity_curve.length)} />
               </div>
 
-              {result.equity_curve.length > 0 && (
+              {result.equity_curve.length > 1 && (
                 <div className="surface p-6">
-                  <h4 className="mb-4 text-xs font-medium uppercase tracking-wider text-dim">
-                    净值曲线
-                  </h4>
-                  <div className="relative h-56 w-full">
-                    <svg
-                      viewBox={`0 0 ${result.equity_curve.length} 100`}
-                      className="h-full w-full"
-                      preserveAspectRatio="none"
-                    >
-                      <defs>
-                        <linearGradient id="btArea" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor="#a78bfa" stopOpacity="0.32" />
-                          <stop offset="100%" stopColor="#a78bfa" stopOpacity="0" />
-                        </linearGradient>
-                        <linearGradient id="btLine" x1="0" y1="0" x2="1" y2="0">
-                          <stop offset="0%" stopColor="#a78bfa" />
-                          <stop offset="100%" stopColor="#4f46e5" />
-                        </linearGradient>
-                      </defs>
-                      <polygon
-                        fill="url(#btArea)"
-                        points={
-                          "0,100 " +
-                          result.equity_curve
-                            .map(
-                              (p, i) =>
-                                `${i},${100 - ((p.value - minVal) / (maxVal - minVal + 1)) * 90 - 5}`,
-                            )
-                            .join(" ") +
-                          ` ${result.equity_curve.length - 1},100`
-                        }
-                      />
-                      <polyline
-                        fill="none"
-                        stroke="url(#btLine)"
-                        strokeWidth="0.8"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        points={result.equity_curve
-                          .map(
-                            (p, i) =>
-                              `${i},${100 - ((p.value - minVal) / (maxVal - minVal + 1)) * 90 - 5}`,
-                          )
-                          .join(" ")}
-                      />
-                    </svg>
-                    <div className="absolute bottom-0 left-0 flex w-full justify-between text-[10px] text-dim">
-                      <span>{result.equity_curve[0]?.date}</span>
-                      <span>
-                        {result.equity_curve[result.equity_curve.length - 1]?.date}
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <h4 className="text-xs font-medium uppercase tracking-wider text-dim">
+                      {t("bt.curve.title")}
+                    </h4>
+                    <div className="flex items-center gap-4 text-[11px] text-muted">
+                      <span className="inline-flex items-center gap-1.5">
+                        <span className="h-2 w-2 rounded-full bg-accent" />
+                        {t("bt.curve.strategy")}
                       </span>
+                      {benchmark.length > 1 && (
+                        <span className="inline-flex items-center gap-1.5">
+                          <span className="h-[2px] w-3 bg-[#fbbf24]" />
+                          {t("bt.curve.benchmark")}
+                        </span>
+                      )}
                     </div>
+                  </div>
+                  <LineAreaChart
+                    data={result.equity_curve.map((p) => ({ x: p.date, y: p.value }))}
+                    primaryLabel={t("bt.curve.strategy")}
+                    overlays={
+                      benchmark.length > 1
+                        ? [
+                            {
+                              label: t("bt.curve.benchmark"),
+                              color: "#fbbf24",
+                              values: result.equity_curve.map(
+                                (_, i) => benchmark[i]?.value ?? null,
+                              ),
+                              dashed: true,
+                            },
+                          ]
+                        : []
+                    }
+                    baseline={result.initial_capital}
+                    formatY={(v) => `$${Math.round(v).toLocaleString()}`}
+                    className="h-64"
+                  />
+                  <div className="mt-2 flex w-full justify-between text-[10px] text-dim">
+                    <span>{result.equity_curve[0]?.date}</span>
+                    <span>
+                      {result.equity_curve[result.equity_curve.length - 1]?.date}
+                    </span>
                   </div>
                 </div>
               )}

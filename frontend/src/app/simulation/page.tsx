@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import LineAreaChart from "@/components/LineAreaChart";
+import PageHeader from "@/components/PageHeader";
 import SignalBadge from "@/components/SignalBadge";
 import StockSearch from "@/components/StockSearch";
 import {
@@ -85,10 +87,10 @@ export default function SimulationPage() {
       setState(s);
     } catch (e) {
       setErr(
-        `无法获取模拟盘状态：${e instanceof Error ? e.message : String(e)}（请确认后端已启动：./start.sh）`,
+        t("sim.err.noState", { msg: e instanceof Error ? e.message : String(e) }),
       );
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     refresh();
@@ -101,7 +103,7 @@ export default function SimulationPage() {
 
   async function doRebalance() {
     if (symbols.length === 0) {
-      setErr("请先添加至少一只股票");
+      setErr(t("sim.err.needSymbol"));
       return;
     }
     setBusy("rebalance");
@@ -114,8 +116,8 @@ export default function SimulationPage() {
         const tradedThisCycle = s.research_signals.filter((r) => r.weight_pct > 0).length;
         setInfo(
           tradedThisCycle === 0
-            ? "本轮所有标的综合信号为中性 / 看空；Paper 盘不做多空操作，故无交易。"
-            : `本轮研究已完成，涉及 ${s.research_signals.length} 只标的。`,
+            ? t("sim.info.noTrades")
+            : t("sim.info.cycleDone", { n: s.research_signals.length }),
         );
       }
     } catch (e) {
@@ -126,10 +128,7 @@ export default function SimulationPage() {
   }
 
   async function doReset() {
-    if (
-      !confirm("确定要清空所有虚拟持仓并把资金重置为 $100,000 吗？此操作不可撤销。")
-    )
-      return;
+    if (!confirm(t("sim.reset.confirm"))) return;
     setBusy("reset");
     clearMsgs();
     try {
@@ -160,12 +159,12 @@ export default function SimulationPage() {
     clearMsgs();
     const sym = orderSymbol.trim().toUpperCase();
     if (!sym) {
-      setErr("请先输入或选择股票代码");
+      setErr(t("sim.err.orderSymbol"));
       return;
     }
     const amt = parseFloat(orderAmount);
     if (!Number.isFinite(amt) || amt <= 0) {
-      setErr("请输入一个大于 0 的数量 / 金额");
+      setErr(t("sim.err.orderAmount"));
       return;
     }
     const opts =
@@ -180,9 +179,12 @@ export default function SimulationPage() {
       setState(resp.state);
       setOrderAmount("");
       setInfo(
-        `${side === "buy" ? "模拟买入" : "模拟卖出"} ${sym} 成功：` +
-          `${fmtShares(resp.trade.shares)} 股 @ ${fmtPrice(resp.trade.price, resp.trade.currency)} · ` +
-          `合计 ${fmtMoney(resp.trade.notional, resp.trade.currency)}`,
+        t(side === "buy" ? "sim.info.bought" : "sim.info.sold", {
+          sym,
+          shares: fmtShares(resp.trade.shares),
+          price: fmtPrice(resp.trade.price, resp.trade.currency),
+          total: fmtMoney(resp.trade.notional, resp.trade.currency),
+        }),
       );
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -198,7 +200,11 @@ export default function SimulationPage() {
       const resp = await closeSimulationPosition(sym);
       setState(resp.state);
       setInfo(
-        `已清仓 ${sym}：${fmtShares(resp.trade.shares)} 股 @ ${fmtPrice(resp.trade.price, resp.trade.currency)}`,
+        t("sim.info.closed", {
+          sym,
+          shares: fmtShares(resp.trade.shares),
+          price: fmtPrice(resp.trade.price, resp.trade.currency),
+        }),
       );
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -217,73 +223,53 @@ export default function SimulationPage() {
   }
   function loadPreset(p: WatchlistPreset) {
     setSymbols(p.symbols);
-    setInfo(`已载入 ${p.label}（${p.symbols.length} 只）`);
+    setInfo(t("sim.info.presetLoaded", { name: p.label, n: p.symbols.length }));
   }
 
   // Equity curve
   const curve = state?.equity_curve ?? [];
-  const curveBounds = useMemo(() => {
-    if (curve.length === 0) return { min: 0, max: 0 };
-    const vals = curve.map((p) => p.value);
-    const mn = Math.min(...vals);
-    const mx = Math.max(...vals);
-    const pad = Math.max((mx - mn) * 0.1, mx * 0.002, 1);
-    return { min: mn - pad, max: mx + pad };
-  }, [curve]);
-
   const equityTone = state && state.total_return_pct >= 0 ? "gain" : "loss";
 
   return (
     <div className="mx-auto max-w-[1440px] px-6 py-8 lg:px-10 lg:py-10">
       {/* Header */}
-      <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <div className="mb-2 inline-flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.16em] text-accent">
-            <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-            {t("sim.tag")}
-          </div>
-          <h2 className="text-3xl font-semibold tracking-tight">{t("sim.title")}</h2>
-          <p className="mt-1 text-sm text-muted">{t("sim.subtitle")}</p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <select
-            value={risk}
-            onChange={(e) => setRisk(e.target.value)}
-            className="input-base !w-auto min-w-[10rem] !py-2 font-medium"
-            aria-label="风险偏好"
-          >
-            <option value="conservative">保守型 · 单标 ≤ 10%</option>
-            <option value="moderate">稳健型 · 单标 ≤ 20%</option>
-            <option value="aggressive">进取型 · 单标 ≤ 35%</option>
-          </select>
-          <button
-            onClick={doRefreshPrices}
-            disabled={busy !== ""}
-            className="btn-ghost"
-            title="重新拉取所有持仓的实时价格"
-          >
-            {busy === "refresh" ? "刷新中…" : "刷新行情"}
-          </button>
-          <button
-            onClick={doRebalance}
-            disabled={busy !== "" || symbols.length === 0}
-            className="btn-primary"
-          >
-            {busy === "rebalance" ? (
-              <>
-                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/60 border-t-transparent" />
-                运行中…
-              </>
-            ) : (
-              <>运行研究循环 · {symbols.length} 标的</>
-            )}
-          </button>
-          <button onClick={doReset} disabled={busy !== ""} className="btn-danger">
-            重置
-          </button>
-        </div>
-      </div>
+      <PageHeader tag={t("sim.tag")} title={t("sim.title")} subtitle={t("sim.subtitle")}>
+        <select
+          value={risk}
+          onChange={(e) => setRisk(e.target.value)}
+          className="input-base !w-auto min-w-[10rem] !py-2 font-medium"
+          aria-label={t("bt.riskPref")}
+        >
+          <option value="conservative">{t("sim.risk.conservative")}</option>
+          <option value="moderate">{t("sim.risk.moderate")}</option>
+          <option value="aggressive">{t("sim.risk.aggressive")}</option>
+        </select>
+        <button
+          onClick={doRefreshPrices}
+          disabled={busy !== ""}
+          className="btn-ghost"
+          title={t("sim.refresh.tip")}
+        >
+          {busy === "refresh" ? t("sim.refreshing") : t("sim.refresh")}
+        </button>
+        <button
+          onClick={doRebalance}
+          disabled={busy !== "" || symbols.length === 0}
+          className="btn-primary"
+        >
+          {busy === "rebalance" ? (
+            <>
+              <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/60 border-t-transparent" />
+              {t("sim.running")}
+            </>
+          ) : (
+            <>{t("sim.runCycle", { n: symbols.length })}</>
+          )}
+        </button>
+        <button onClick={doReset} disabled={busy !== ""} className="btn-danger">
+          {t("sim.reset")}
+        </button>
+      </PageHeader>
 
       {/* Status messages */}
       {err && (
@@ -302,37 +288,41 @@ export default function SimulationPage() {
       {/* KPI grid */}
       <div className="grid gap-4 md:grid-cols-5">
         <Kpi
-          label="虚拟总资产"
+          label={t("sim.kpi.equity")}
           value={state ? fmtMoney(state.equity, "USD") : "—"}
         />
         <Kpi
-          label="总收益率"
+          label={t("sim.kpi.return")}
           value={state ? fmtPct(state.total_return_pct) : "—"}
           tone={equityTone}
           large
         />
         <Kpi
-          label="可用现金"
+          label={t("sim.kpi.cash")}
           value={state ? fmtMoney(state.cash, "USD") : "—"}
           sub={
-            state ? `${state.cash_pct.toFixed(1)}% 现金` : undefined
+            state
+              ? t("sim.kpi.cashPct", { pct: state.cash_pct.toFixed(1) })
+              : undefined
           }
         />
         <Kpi
-          label="持仓市值"
+          label={t("sim.kpi.invested")}
           value={state ? fmtMoney(state.invested_value, "USD") : "—"}
           sub={
-            state ? `${state.invested_pct.toFixed(1)}% 仓位` : undefined
+            state
+              ? t("sim.kpi.investedPct", { pct: state.invested_pct.toFixed(1) })
+              : undefined
           }
         />
         <Kpi
-          label="持仓数 · 交易数"
+          label={t("sim.kpi.counts")}
           value={
             state
               ? `${state.holdings.length} · ${state.trade_count}`
               : "—"
           }
-          sub="起始 $100,000"
+          sub={t("sim.kpi.initial")}
         />
       </div>
 
@@ -340,135 +330,120 @@ export default function SimulationPage() {
       <div className="surface mt-6 overflow-hidden p-6">
         <div className="mb-3 flex items-center justify-between">
           <div>
-            <h4 className="text-sm font-semibold">模拟净值曲线</h4>
-            <p className="text-[11px] text-dim">
-              每次刷新行情 / 运行研究 / 下单 后自动采样
-            </p>
+            <h4 className="text-sm font-semibold">{t("sim.curve.title")}</h4>
+            <p className="text-[11px] text-dim">{t("sim.curve.subtitle")}</p>
           </div>
           <div className="flex items-center gap-4 text-[11px]">
             <span className="inline-flex items-center gap-1.5 text-muted">
-              <span className="h-2 w-2 rounded-full bg-accent" /> 净值
+              <span className="h-2 w-2 rounded-full bg-accent" /> {t("sim.curve.equity")}
             </span>
             <span className="inline-flex items-center gap-1.5 text-muted">
-              <span className="h-[2px] w-3 bg-[var(--border-strong)]" /> 起始
-              $100,000
+              <span className="h-[2px] w-3 bg-[var(--border-strong)]" />{" "}
+              {t("sim.curve.start")}
             </span>
             {state && curve.length > 0 && (
               <span className="font-mono text-muted">
-                最新 {fmtMoney(curve[curve.length - 1].value, "USD")}
+                {t("sim.curve.latest", {
+                  v: fmtMoney(curve[curve.length - 1].value, "USD"),
+                })}
               </span>
             )}
           </div>
         </div>
 
-        <div className="relative h-56 w-full">
-          {curve.length > 1 ? (
-            <>
-              <svg
-                viewBox={`0 0 ${curve.length} 100`}
-                className="h-full w-full"
-                preserveAspectRatio="none"
-              >
-                <defs>
-                  <linearGradient id="eqGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#a78bfa" stopOpacity="0.35" />
-                    <stop offset="100%" stopColor="#a78bfa" stopOpacity="0" />
-                  </linearGradient>
-                  <linearGradient id="eqLine" x1="0" y1="0" x2="1" y2="0">
-                    <stop offset="0%" stopColor="#a78bfa" />
-                    <stop offset="100%" stopColor="#4f46e5" />
-                  </linearGradient>
-                </defs>
-                {state && (
-                  <line
-                    x1="0"
-                    x2={curve.length - 1}
-                    y1={
-                      100 -
-                      ((state.initial_capital - curveBounds.min) /
-                        (curveBounds.max - curveBounds.min + 1e-9)) *
-                        90 -
-                      5
-                    }
-                    y2={
-                      100 -
-                      ((state.initial_capital - curveBounds.min) /
-                        (curveBounds.max - curveBounds.min + 1e-9)) *
-                        90 -
-                      5
-                    }
-                    stroke="rgba(255,255,255,0.10)"
-                    strokeWidth="0.25"
-                    strokeDasharray="1 1"
-                  />
-                )}
-                <polygon
-                  fill="url(#eqGrad)"
-                  points={
-                    "0,100 " +
-                    curve
-                      .map(
-                        (p, i) =>
-                          `${i},${
-                            100 -
-                            ((p.value - curveBounds.min) /
-                              (curveBounds.max - curveBounds.min + 1e-9)) *
-                              90 -
-                            5
-                          }`,
-                      )
-                      .join(" ") +
-                    ` ${curve.length - 1},100`
-                  }
-                />
-                <polyline
-                  fill="none"
-                  stroke="url(#eqLine)"
-                  strokeWidth="0.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  points={curve
-                    .map(
-                      (p, i) =>
-                        `${i},${
-                          100 -
-                          ((p.value - curveBounds.min) /
-                            (curveBounds.max - curveBounds.min + 1e-9)) *
-                            90 -
-                          5
-                        }`,
-                    )
-                    .join(" ")}
-                />
-              </svg>
-              <div className="pointer-events-none absolute inset-0 flex flex-col justify-between p-2 font-mono text-[10px] text-dim">
-                <span>{fmtMoney(curveBounds.max, "USD")}</span>
-                <span>{fmtMoney(curveBounds.min, "USD")}</span>
-              </div>
-            </>
-          ) : (
-            <div className="flex h-full items-center justify-center text-xs text-dim">
-              运行一次研究循环，或手动下一笔模拟单，曲线就会在这里出现
-            </div>
-          )}
-        </div>
+        {curve.length > 1 ? (
+          <LineAreaChart
+            data={curve.map((p) => ({
+              x: new Date(p.ts).toLocaleString(),
+              y: p.value,
+            }))}
+            primaryLabel={t("sim.curve.equity")}
+            baseline={state?.initial_capital}
+            baselineLabel={t("sim.curve.start")}
+            formatY={(v) => fmtMoney(v, "USD")}
+            className="h-56"
+          />
+        ) : (
+          <div className="flex h-56 items-center justify-center text-xs text-dim">
+            {t("sim.curve.empty")}
+          </div>
+        )}
       </div>
 
       {/* Main grid: left = watchlist + presets + manual order; right = holdings, research, trades */}
       <div className="mt-6 grid gap-6 xl:grid-cols-[360px_1fr]">
         {/* LEFT COLUMN */}
         <div className="space-y-6">
+          {/* Watch-list + quick presets — the primary research entry point */}
+          <div className="surface p-5">
+            <h3 className="mb-3 text-sm font-semibold">{t("sim.watch.title")}</h3>
+            <StockSearch
+              onSelect={addSym}
+              placeholder={t("sim.watch.searchPlaceholder")}
+              fullWidth
+            />
+
+            {symbols.length === 0 ? (
+              <p className="mt-4 text-xs text-dim">{t("sim.watch.empty")}</p>
+            ) : (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {symbols.map((s) => (
+                  <span
+                    key={s}
+                    className="group inline-flex items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--bg-elev)] py-1 pl-2 pr-1 font-mono text-[12px] text-white"
+                  >
+                    {s}
+                    <button
+                      onClick={() => removeSym(s)}
+                      className="flex h-4 w-4 items-center justify-center rounded text-dim hover:bg-[rgba(248,113,113,0.12)] hover:text-[#fca5a5]"
+                      aria-label={t("sim.watch.remove", { sym: s })}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            <div className="mt-5 border-t border-[var(--border)] pt-4">
+              <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-dim">
+                {t("sim.presets.quick")}
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {presets.map((p) => (
+                  <button
+                    key={p.key}
+                    onClick={() => loadPreset(p)}
+                    className="rounded-lg border border-[var(--border)] bg-[var(--bg-elev)] px-2.5 py-1.5 text-[12px] text-muted transition-colors hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)] hover:text-white"
+                    title={p.description}
+                  >
+                    {p.label}
+                    <span className="ml-1.5 font-mono text-[10px] text-dim">
+                      {p.symbols.length}
+                    </span>
+                  </button>
+                ))}
+                {presets.length === 0 && (
+                  <p className="text-[11px] text-dim">{t("sim.presets.fail")}</p>
+                )}
+              </div>
+              <p className="mt-3 text-[11px] leading-relaxed text-dim">
+                {t("sim.presets.note")}
+              </p>
+            </div>
+          </div>
+
           {/* Manual order panel — the professional paper-trading entry point */}
           <div className="surface p-5">
             <div className="mb-3 flex items-center justify-between">
-              <h3 className="text-sm font-semibold">手动下单</h3>
-              <span className="chip chip-neutral">市价单 · 即时成交</span>
+              <h3 className="text-sm font-semibold">{t("sim.order.title")}</h3>
+              <span className="chip chip-neutral">{t("sim.order.badge")}</span>
             </div>
 
             <div className="space-y-3">
               <StockSearch
                 onSelect={(s) => setOrderSymbol(s)}
-                placeholder="输入股票代码（AAPL / 0700.HK / 600519.SS）"
+                placeholder={t("sim.order.searchPlaceholder")}
                 fullWidth
                 clearOnSelect={false}
               />
@@ -491,7 +466,7 @@ export default function SimulationPage() {
                   }`}
                   onClick={() => setOrderMode("dollars")}
                 >
-                  按金额
+                  {t("sim.order.byDollars")}
                 </button>
                 <button
                   type="button"
@@ -502,7 +477,7 @@ export default function SimulationPage() {
                   }`}
                   onClick={() => setOrderMode("shares")}
                 >
-                  按股数
+                  {t("sim.order.byShares")}
                 </button>
               </div>
 
@@ -512,8 +487,8 @@ export default function SimulationPage() {
                 step={orderMode === "dollars" ? "100" : "1"}
                 placeholder={
                   orderMode === "dollars"
-                    ? "金额 / 例：1000"
-                    : "股数 / 例：10"
+                    ? t("sim.order.amount.dollars")
+                    : t("sim.order.amount.shares")
                 }
                 value={orderAmount}
                 onChange={(e) => setOrderAmount(e.target.value)}
@@ -527,7 +502,7 @@ export default function SimulationPage() {
                   disabled={busy.startsWith("buy") || busy.startsWith("sell")}
                   className="rounded-lg bg-[#10b981] px-3 py-2.5 text-sm font-medium text-white transition hover:bg-[#0ea770] disabled:opacity-50"
                 >
-                  {busy.startsWith("buy") ? "买入中…" : "模拟买入"}
+                  {busy.startsWith("buy") ? t("sim.order.buying") : t("sim.order.buy")}
                 </button>
                 <button
                   type="button"
@@ -535,85 +510,13 @@ export default function SimulationPage() {
                   disabled={busy.startsWith("buy") || busy.startsWith("sell")}
                   className="rounded-lg bg-[#f43f5e] px-3 py-2.5 text-sm font-medium text-white transition hover:bg-[#e11d48] disabled:opacity-50"
                 >
-                  {busy.startsWith("sell") ? "卖出中…" : "模拟卖出"}
+                  {busy.startsWith("sell") ? t("sim.order.selling") : t("sim.order.sell")}
                 </button>
               </div>
 
               <p className="text-[11px] leading-relaxed text-dim">
-                下单以最新公开收盘价成交，无滑点 / 无佣金，仅用于学习演示。
+                {t("sim.order.note")}
               </p>
-            </div>
-          </div>
-
-          {/* Watch-list editor */}
-          <div className="surface p-5">
-            <h3 className="mb-3 text-sm font-semibold">研究监控列表</h3>
-            <StockSearch
-              onSelect={addSym}
-              placeholder="搜索代码或公司名"
-              fullWidth
-            />
-
-            {symbols.length === 0 ? (
-              <p className="mt-4 text-xs text-dim">
-                列表为空 · 搜索后按回车即可加入
-              </p>
-            ) : (
-              <div className="mt-3 flex flex-wrap gap-1.5">
-                {symbols.map((s) => (
-                  <span
-                    key={s}
-                    className="group inline-flex items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--bg-elev)] py-1 pl-2 pr-1 font-mono text-[12px] text-white"
-                  >
-                    {s}
-                    <button
-                      onClick={() => removeSym(s)}
-                      className="flex h-4 w-4 items-center justify-center rounded text-dim hover:bg-[rgba(248,113,113,0.12)] hover:text-[#fca5a5]"
-                      aria-label={`移除 ${s}`}
-                    >
-                      ×
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-            <p className="mt-4 text-[11px] leading-relaxed text-dim">
-              点击顶部「运行研究循环」让 18 位 AI 分析师自动调仓，
-              也可以直接在上面的「手动下单」中逐笔交易。
-            </p>
-          </div>
-
-          {/* Presets */}
-          <div className="surface p-5">
-            <h3 className="mb-3 text-sm font-semibold">预设快捷组</h3>
-            <p className="mb-3 text-[11px] text-dim">
-              一键替换监控列表 · 仅用于演示学习，非组合推荐
-            </p>
-            <div className="space-y-2">
-              {presets.map((p) => (
-                <button
-                  key={p.key}
-                  onClick={() => loadPreset(p)}
-                  className="group flex w-full items-center justify-between rounded-lg border border-[var(--border)] bg-[var(--bg-elev)] px-3 py-2 text-left transition-colors hover:border-[var(--border-strong)] hover:bg-[var(--bg-hover)]"
-                >
-                  <div>
-                    <p className="text-[13px] font-medium text-white">
-                      {p.label}
-                    </p>
-                    <p className="text-[10px] text-dim">
-                      {p.symbols.length} 只 · {p.region}
-                    </p>
-                  </div>
-                  <span className="text-[10px] text-dim group-hover:text-accent">
-                    载入 →
-                  </span>
-                </button>
-              ))}
-              {presets.length === 0 && (
-                <p className="text-[11px] text-dim">
-                  预设加载失败（后端未启动？）
-                </p>
-              )}
             </div>
           </div>
         </div>
@@ -623,36 +526,54 @@ export default function SimulationPage() {
           {/* Holdings */}
           <div className="surface overflow-hidden">
             <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-3">
-              <h3 className="text-sm font-semibold">当前虚拟持仓</h3>
+              <h3 className="text-sm font-semibold">{t("sim.holdings.title")}</h3>
               {state?.last_rebalance_at && (
                 <span className="text-[11px] text-dim">
-                  上次研究循环 ·{" "}
-                  {new Date(state.last_rebalance_at).toLocaleString()}
+                  {t("sim.holdings.lastCycle", {
+                    ts: new Date(state.last_rebalance_at).toLocaleString(),
+                  })}
                 </span>
               )}
             </div>
             {!state || state.holdings.length === 0 ? (
-              <div className="px-6 py-16 text-center">
-                <p className="text-sm text-muted">尚无虚拟持仓</p>
-                <p className="mt-1 text-[11px] text-dim">
-                  可从左侧「手动下单」买入第一笔，或点击「运行研究循环」让 AI
-                  自动调仓
+              <div className="px-6 py-12">
+                <p className="text-center text-sm font-medium text-white">
+                  {t("sim.start.title")}
                 </p>
+                <ol className="mx-auto mt-5 flex max-w-xl flex-col gap-3">
+                  {(["step1", "step2", "step3"] as const).map((k, i) => (
+                    <li key={k} className="flex items-start gap-3 text-[13px] text-muted">
+                      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-accent-gradient font-mono text-[10px] font-semibold text-white">
+                        {i + 1}
+                      </span>
+                      {t(`sim.start.${k}`)}
+                    </li>
+                  ))}
+                </ol>
+                <div className="mt-6 text-center">
+                  <button
+                    onClick={doRebalance}
+                    disabled={busy !== "" || symbols.length === 0}
+                    className="btn-primary"
+                  >
+                    {busy === "rebalance" ? t("sim.running") : t("sim.start.cta")}
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[880px] text-sm">
                   <thead className="bg-white/[0.02] text-[10px] uppercase tracking-wider text-dim">
                     <tr>
-                      <Th>标的</Th>
-                      <Th center>信号</Th>
-                      <Th right>股数</Th>
-                      <Th right>成本</Th>
-                      <Th right>现价</Th>
-                      <Th right>市值</Th>
-                      <Th right>权重</Th>
-                      <Th right>盈亏</Th>
-                      <Th center>操作</Th>
+                      <Th>{t("sim.col.symbol")}</Th>
+                      <Th center>{t("sim.col.signal")}</Th>
+                      <Th right>{t("sim.col.shares")}</Th>
+                      <Th right>{t("sim.col.cost")}</Th>
+                      <Th right>{t("sim.col.price")}</Th>
+                      <Th right>{t("sim.col.value")}</Th>
+                      <Th right>{t("sim.col.weight")}</Th>
+                      <Th right>{t("sim.col.pnl")}</Th>
+                      <Th center>{t("sim.col.action")}</Th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[var(--border)]">
@@ -708,7 +629,7 @@ export default function SimulationPage() {
                             disabled={busy !== ""}
                             className="rounded-md border border-[var(--border)] bg-[var(--bg-elev)] px-2 py-1 text-[11px] text-dim transition hover:border-[rgba(248,113,113,0.3)] hover:text-[#fca5a5] disabled:opacity-40"
                           >
-                            {busy === `close:${h.symbol}` ? "…" : "清仓"}
+                            {busy === `close:${h.symbol}` ? "…" : t("sim.close")}
                           </button>
                         </Td>
                       </tr>
@@ -723,21 +644,21 @@ export default function SimulationPage() {
           {lastResearch.length > 0 && (
             <div className="surface overflow-hidden">
               <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-3">
-                <h3 className="text-sm font-semibold">本轮研究信号</h3>
+                <h3 className="text-sm font-semibold">{t("sim.research.title")}</h3>
                 <span className="text-[11px] text-dim">
-                  {lastResearch.length} 只标的 · 来自 18 位 AI 分析师的合成结果
+                  {t("sim.research.subtitle", { n: lastResearch.length })}
                 </span>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[720px] text-sm">
                   <thead className="bg-white/[0.02] text-[10px] uppercase tracking-wider text-dim">
                     <tr>
-                      <Th>标的</Th>
-                      <Th center>方向</Th>
-                      <Th right>置信度</Th>
-                      <Th right>示意权重</Th>
-                      <Th right>当前价</Th>
-                      <Th>模型摘要</Th>
+                      <Th>{t("sim.col.symbol")}</Th>
+                      <Th center>{t("sim.col.direction")}</Th>
+                      <Th right>{t("sim.col.confidence")}</Th>
+                      <Th right>{t("sim.col.illWeight")}</Th>
+                      <Th right>{t("sim.col.curPrice")}</Th>
+                      <Th>{t("sim.col.summary")}</Th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[var(--border)]">
@@ -777,7 +698,7 @@ export default function SimulationPage() {
                 </table>
               </div>
               <p className="border-t border-[var(--border)] px-5 py-2.5 text-[10px] text-dim">
-                即使本轮没有触发模拟交易，这里也能看到每只标的的完整研究输出。
+                {t("sim.research.note")}
               </p>
             </div>
           )}
@@ -787,56 +708,58 @@ export default function SimulationPage() {
             <div className="surface overflow-hidden">
               <div className="flex items-center justify-between border-b border-[var(--border)] px-5 py-3">
                 <h3 className="text-sm font-semibold">
-                  交易流水（最近 {Math.min(state.recent_trades.length, 50)} 条）
+                  {t("sim.trades.title", {
+                    n: Math.min(state.recent_trades.length, 50),
+                  })}
                 </h3>
                 <span className="text-[11px] text-dim">
-                  共 {state.trade_count} 笔
+                  {t("sim.trades.total", { n: state.trade_count })}
                 </span>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[820px] text-sm">
                   <thead className="bg-white/[0.02] text-[10px] uppercase tracking-wider text-dim">
                     <tr>
-                      <Th>时间</Th>
-                      <Th>标的</Th>
-                      <Th center>方向</Th>
-                      <Th right>股数</Th>
-                      <Th right>价格</Th>
-                      <Th right>名义金额</Th>
-                      <Th>来源</Th>
+                      <Th>{t("sim.col.time")}</Th>
+                      <Th>{t("sim.col.symbol")}</Th>
+                      <Th center>{t("sim.col.direction")}</Th>
+                      <Th right>{t("sim.col.shares")}</Th>
+                      <Th right>{t("sim.col.price")}</Th>
+                      <Th right>{t("sim.col.notional")}</Th>
+                      <Th>{t("sim.col.reason")}</Th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[var(--border)]">
-                    {state.recent_trades.slice(0, 50).map((t, i) => (
+                    {state.recent_trades.slice(0, 50).map((tr, i) => (
                       <tr
-                        key={t.id ?? `${t.timestamp}-${i}`}
+                        key={tr.id ?? `${tr.timestamp}-${i}`}
                         className="transition-colors hover:bg-[var(--bg-hover)]"
                       >
                         <Td muted>
-                          {new Date(t.timestamp).toLocaleString()}
+                          {new Date(tr.timestamp).toLocaleString()}
                         </Td>
-                        <Td mono>{t.symbol}</Td>
+                        <Td mono>{tr.symbol}</Td>
                         <Td center>
                           <span
                             className={`chip ${
-                              t.side === "buy"
+                              tr.side === "buy"
                                 ? "chip-bullish"
                                 : "chip-bearish"
                             }`}
                           >
-                            {t.side === "buy" ? "买入" : "卖出"}
+                            {t(tr.side === "buy" ? "common.buy" : "common.sell")}
                           </span>
                         </Td>
                         <Td right mono>
-                          {fmtShares(t.shares)}
+                          {fmtShares(tr.shares)}
                         </Td>
                         <Td right mono>
-                          {fmtPrice(t.price, t.currency)}
+                          {fmtPrice(tr.price, tr.currency)}
                         </Td>
                         <Td right mono>
-                          {fmtMoney(t.notional, t.currency)}
+                          {fmtMoney(tr.notional, tr.currency)}
                         </Td>
-                        <Td muted>{t.reason}</Td>
+                        <Td muted>{tr.reason}</Td>
                       </tr>
                     ))}
                   </tbody>
@@ -848,8 +771,7 @@ export default function SimulationPage() {
       </div>
 
       <p className="mt-10 text-center text-[11px] text-dim">
-        {state?.disclaimer ??
-          "EDUCATIONAL USE ONLY · 所有持仓与交易均为虚拟，不构成任何投资建议"}
+        {state?.disclaimer ?? t("sim.footer.fallback")}
       </p>
     </div>
   );

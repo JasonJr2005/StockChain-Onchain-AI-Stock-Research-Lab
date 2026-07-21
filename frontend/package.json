@@ -1,6 +1,6 @@
 {
   "name": "fintastech-frontend",
-  "version": "0.3.0",
+  "version": "0.5.0",
   "private": true,
   "description": "FintasTech Research Lab dApp — educational paper-trading UI. NOT investment advice.",
   "scripts": {

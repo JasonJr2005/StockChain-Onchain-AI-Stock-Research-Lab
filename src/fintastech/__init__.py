@@ -6,4 +6,4 @@ and is architecturally restricted to paper trading against a mock asset (mUSDC)
 and public market data feeds.
 """
 
-__version__ = "0.3.0"
+__version__ = "0.5.0"

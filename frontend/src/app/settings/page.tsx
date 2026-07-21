@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import PageHeader from "@/components/PageHeader";
 import { useT } from "@/lib/i18n/context";
 
 const RISK_KEY = "fintastech.risk.v1";
@@ -46,14 +47,11 @@ export default function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-[900px] px-8 py-10">
-      <div className="mb-8">
-        <div className="mb-2 inline-flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.16em] text-accent">
-          <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-          {t("settings.tag")}
-        </div>
-        <h2 className="text-3xl font-semibold tracking-tight">{t("settings.title")}</h2>
-        <p className="mt-1 text-sm text-muted">{t("settings.subtitle")}</p>
-      </div>
+      <PageHeader
+        tag={t("settings.tag")}
+        title={t("settings.title")}
+        subtitle={t("settings.subtitle")}
+      />
 
       <h3 className="mb-3 text-sm font-medium text-muted">{t("settings.risk.title")}</h3>
       <div className="grid gap-3 md:grid-cols-3">

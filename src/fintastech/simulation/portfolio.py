@@ -19,8 +19,11 @@ from __future__ import annotations
 
 import json
 import math
+import os
+import tempfile
 import threading
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -137,6 +140,10 @@ _MIN_AUTO_TRADE_NOTIONAL = 25.0
 # (the user is in control) but we still protect cash.
 _ABSOLUTE_MAX_WEIGHT = 0.35
 
+# Persisted equity-curve samples are capped so the ledger JSON cannot grow
+# without bound in a long-running install. Old samples roll off the front.
+_MAX_EQUITY_POINTS = 2000
+
 
 class OrderError(ValueError):
     """Raised when a paper-trading order cannot be executed."""
@@ -175,15 +182,35 @@ class SimulatedPortfolio:
             return s
 
     def _save(self) -> None:
+        """Persist atomically: write a sibling temp file, then rename over the
+        target. A crash mid-write can no longer corrupt the ledger."""
         self.storage_path.parent.mkdir(parents=True, exist_ok=True)
-        with self.storage_path.open("w", encoding="utf-8") as fh:
-            json.dump(self._state.to_json(), fh, ensure_ascii=False, indent=2)
+        payload = json.dumps(self._state.to_json(), ensure_ascii=False, indent=2)
+        fd, tmp_path = tempfile.mkstemp(
+            dir=self.storage_path.parent, prefix=self.storage_path.name, suffix=".tmp"
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                fh.write(payload)
+            os.replace(tmp_path, self.storage_path)
+        except BaseException:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
 
     @staticmethod
-    def _seed_equity_curve(state: _State) -> None:
+    def _push_equity_sample(state: _State, value: float) -> None:
         state.equity_curve.append(
-            {"ts": datetime.now(UTC).isoformat(), "value": state.cash}
+            {"ts": datetime.now(UTC).isoformat(), "value": round(value, 2)}
         )
+        if len(state.equity_curve) > _MAX_EQUITY_POINTS:
+            del state.equity_curve[: len(state.equity_curve) - _MAX_EQUITY_POINTS]
+
+    @classmethod
+    def _seed_equity_curve(cls, state: _State) -> None:
+        cls._push_equity_sample(state, state.cash)
 
     # ---- public API -----------------------------------------------------
 
@@ -206,15 +233,19 @@ class SimulatedPortfolio:
     ) -> dict[str, Any]:
         state = self._state
         if refresh_prices and state.holdings:
-            for sym, h in state.holdings.items():
+            symbols = list(state.holdings.keys())
+
+            def _poll(sym: str) -> float | None:
                 try:
-                    px = self.provider.get_last_price(
-                        sym, force_refresh=force_refresh
-                    )
+                    return self.provider.get_last_price(sym, force_refresh=force_refresh)
                 except Exception:
-                    px = None
-                if px is not None:
-                    h.last_price = px
+                    return None
+
+            workers = max(1, min(8, len(symbols)))
+            with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="quote") as pool:
+                for sym, px in zip(symbols, pool.map(_poll, symbols)):
+                    if px is not None:
+                        state.holdings[sym].last_price = px
 
         equity = state.cash
         holdings_out: list[dict[str, Any]] = []
@@ -282,10 +313,7 @@ class SimulatedPortfolio:
             snap = self._snapshot_unlocked(
                 refresh_prices=True, force_refresh=True
             )
-            now_iso = datetime.now(UTC).isoformat()
-            self._state.equity_curve.append(
-                {"ts": now_iso, "value": round(snap["equity"], 2)}
-            )
+            self._push_equity_sample(self._state, snap["equity"])
             self._save()
             snap = self._snapshot_unlocked()
             return snap
@@ -452,9 +480,7 @@ class SimulatedPortfolio:
         equity = state.cash + sum(
             h.shares * h.last_price for h in state.holdings.values()
         )
-        state.equity_curve.append(
-            {"ts": datetime.now(UTC).isoformat(), "value": round(equity, 2)}
-        )
+        self._push_equity_sample(state, equity)
 
     # ---- auto-rebalance (research loop) --------------------------------
 
@@ -477,10 +503,12 @@ class SimulatedPortfolio:
         signals: dict[str, dict[str, Any]] = {}
         research_log: list[dict[str, Any]] = []
 
-        for sym in tickers[:25]:
-            try:
-                r = self.orchestrator.analyze(sym, risk_profile=profile)
-            except Exception as exc:
+        watch = list(dict.fromkeys(tickers[:25]))
+        analyses = self.orchestrator.analyze_many(watch, risk_profile=profile)
+
+        for sym in watch:
+            r = analyses.get(sym)
+            if r is None or isinstance(r, Exception):
                 research_log.append(
                     {
                         "symbol": sym,
@@ -489,7 +517,7 @@ class SimulatedPortfolio:
                         "weight_pct": 0.0,
                         "price": 0.0,
                         "currency": currency_from_symbol(sym),
-                        "summary": f"研究失败：{exc}",
+                        "summary": f"研究失败：{r if r else '结果缺失'}",
                     }
                 )
                 continue
@@ -622,9 +650,7 @@ class SimulatedPortfolio:
             equity_after = state.cash + sum(
                 h.shares * h.last_price for h in state.holdings.values()
             )
-            state.equity_curve.append(
-                {"ts": now_iso, "value": round(equity_after, 2)}
-            )
+            self._push_equity_sample(state, equity_after)
             state.last_rebalance_at = now_iso
             self._save()
 

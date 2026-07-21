@@ -1,4 +1,4 @@
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from typing import Literal
 
 import numpy as np
@@ -54,3 +54,29 @@ class MockMarketProvider(MarketDataProvider):
                 }
             )
         return df
+
+    # -- extended provider surface (mirrors YahooFinanceProvider) ----------
+    # Lets the paper-trading ledger, orchestrator and API endpoints run fully
+    # offline in tests and demos.
+
+    def get_last_price(self, symbol: str, *, force_refresh: bool = False) -> float | None:
+        df = self.get_history(symbol)
+        if df.empty:
+            return None
+        return float(df["close"].iloc[-1])
+
+    def get_stock_info(self, symbol: str) -> dict:
+        return {
+            "name": f"{symbol} (mock)",
+            "sector": "Technology",
+            "currency": "USD",
+            "exchange": "MOCK",
+        }
+
+    def search_tickers(self, query: str, limit: int = 10) -> list[dict]:
+        q = (query or "").strip().upper()
+        if not q:
+            return []
+        return [
+            {"symbol": q, "name": f"{q} (mock)", "exchange": "MOCK", "type": "EQUITY", "currency": "USD"}
+        ][:limit]

@@ -4,7 +4,6 @@ In production, integrate news APIs / social media feeds and optional LLM summari
 Currently uses volume-price divergence as a rough proxy.
 """
 
-import numpy as np
 import pandas as pd
 
 from fintastech.models.analysis import AnalystSignal, SignalDirection

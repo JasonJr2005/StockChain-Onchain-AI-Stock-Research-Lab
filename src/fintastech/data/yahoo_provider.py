@@ -18,7 +18,6 @@ This module is **defensive**:
 from __future__ import annotations
 
 import math
-import threading
 import time
 from datetime import date, timedelta
 from typing import Any, Literal
@@ -27,6 +26,7 @@ import pandas as pd
 import yfinance as yf
 
 from fintastech.data.base import MarketDataProvider
+from fintastech.utils.cache import TTLCache
 
 # ---------------------------------------------------------------------------
 # Currency inference (frontend uses this to pick $ / HK$ / CN¥)
@@ -65,33 +65,9 @@ def currency_from_symbol(symbol: str) -> str:
 # ---------------------------------------------------------------------------
 
 
-class _TTLCache:
-    """Tiny thread-safe TTL cache."""
-
-    def __init__(self, ttl_seconds: float) -> None:
-        self._ttl = ttl_seconds
-        self._data: dict[str, tuple[float, Any]] = {}
-        self._lock = threading.Lock()
-
-    def get(self, key: str) -> Any | None:
-        with self._lock:
-            hit = self._data.get(key)
-            if hit is None:
-                return None
-            ts, val = hit
-            if time.time() - ts > self._ttl:
-                self._data.pop(key, None)
-                return None
-            return val
-
-    def set(self, key: str, value: Any) -> None:
-        with self._lock:
-            self._data[key] = (time.time(), value)
-
-
-_HISTORY_CACHE = _TTLCache(ttl_seconds=60.0)
-_INFO_CACHE = _TTLCache(ttl_seconds=600.0)
-_SEARCH_CACHE = _TTLCache(ttl_seconds=300.0)
+_HISTORY_CACHE = TTLCache(ttl_seconds=60.0, max_entries=512)
+_INFO_CACHE = TTLCache(ttl_seconds=600.0, max_entries=512)
+_SEARCH_CACHE = TTLCache(ttl_seconds=300.0, max_entries=256)
 
 
 # ---------------------------------------------------------------------------

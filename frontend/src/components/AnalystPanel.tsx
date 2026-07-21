@@ -2,6 +2,7 @@
 
 import type { AnalystSignal } from "@/lib/api";
 import SignalBadge from "./SignalBadge";
+import { useT } from "@/lib/i18n/context";
 
 interface Props {
   signals: AnalystSignal[];
@@ -15,6 +16,7 @@ const GLYPH: Record<string, string> = {
 };
 
 export default function AnalystPanel({ signals }: Props) {
+  const { t } = useT();
   return (
     <div className="grid gap-3 md:grid-cols-2">
       {signals.map((s) => (
@@ -29,7 +31,9 @@ export default function AnalystPanel({ signals }: Props) {
               </span>
               <SignalBadge signal={s.signal} size="sm" />
               <span className="ml-auto text-[11px] text-dim">
-                置信度 {Math.round(s.confidence * 100)}%
+                {t("analysis.confidencePct", {
+                  pct: Math.round(s.confidence * 100),
+                })}
               </span>
             </div>
             <p className="text-[13px] leading-relaxed text-muted">

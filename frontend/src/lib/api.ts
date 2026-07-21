@@ -37,6 +37,17 @@ export async function batchAnalyze(
   return res.json();
 }
 
+export async function getHistory(
+  symbol: string,
+  period: HistoryPeriod = "6mo",
+): Promise<PriceHistory> {
+  const res = await fetch(
+    `${BASE}/v1/history/${encodeURIComponent(symbol)}?period=${period}`,
+  );
+  if (!res.ok) throw new Error("History fetch failed");
+  return res.json();
+}
+
 /* ── Masters ── */
 export async function getMasters(): Promise<MasterProfile[]> {
   const res = await fetch(`${BASE}/v1/masters`);
@@ -196,6 +207,27 @@ export interface AnalysisResult {
   error?: string;
 }
 
+export type HistoryPeriod = "1mo" | "3mo" | "6mo" | "1y" | "2y";
+
+export interface PriceBar {
+  date: string;
+  open: number | null;
+  high: number | null;
+  low: number | null;
+  close: number;
+  volume: number;
+  ma20: number | null;
+  ma50: number | null;
+}
+
+export interface PriceHistory {
+  symbol: string;
+  period: string;
+  currency?: string;
+  bars: PriceBar[];
+  error?: string;
+}
+
 export interface WatchlistPreset {
   key: string;
   label: string;
@@ -229,6 +261,9 @@ export interface BacktestResponse {
   annualized_return_pct: number;
   max_drawdown_pct: number;
   sharpe_ratio: number | null;
+  volatility_pct?: number | null;
+  benchmark_return_pct?: number | null;
+  benchmark_curve?: { date: string; value: number }[];
   trades: number;
   equity_curve: { date: string; value: number }[];
   notes?: string;

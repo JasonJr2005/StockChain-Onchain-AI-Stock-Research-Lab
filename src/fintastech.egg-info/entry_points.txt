@@ -1,2 +1,0 @@
-[console_scripts]
-fintastech-api = fintastech.api.__main__:main
