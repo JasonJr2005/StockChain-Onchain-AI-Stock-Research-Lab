@@ -1,9 +1,8 @@
-<p align="center">
-  <img src="logo/stockchain.svg" alt="StockChain logo" width="110" />
-</p>
-
 <h1 align="center">FintasTech · StockChain Research Lab</h1>
 
+<p align="center">
+  <img src="logo/stockchain.svg" alt="StockChain logo" width="260" />
+</p>
 <p align="center">
   <b>An open-source lab where rule-based multi-agent equity research meets a transparent, on-chain auditable paper-trading vault.</b><br/>
   <i>Every signal is reproducible. Every allocation is auditable. Every NAV move is backed by real market data.</i>
