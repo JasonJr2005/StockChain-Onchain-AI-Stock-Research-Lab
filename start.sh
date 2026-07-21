@@ -191,7 +191,7 @@ printf '  API docs   : http://127.0.0.1:%s/docs\n' "$BACKEND_PORT"
 printf '  Chain RPC  : http://127.0.0.1:%s  (%s)\n' "$CHAIN_PORT" "$CHAIN_STATUS"
 printf '\n  Vault demo : add the "Hardhat Localhost" network to MetaMask\n'
 printf '               (RPC http://127.0.0.1:%s, chainId 31337) and import\n' "$CHAIN_PORT"
-printf '               Hardhat Account #0 - see README step 4 for the key.\n'
+printf '               Hardhat Account #0 - see the README MetaMask section.\n'
 printf '\n  Stop everything with ./stop.sh\n'
 printf '\033[1;32m%s\033[0m\n\n' "-----------------------------------------------"
 
