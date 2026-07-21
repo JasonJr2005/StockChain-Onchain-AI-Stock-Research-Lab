@@ -108,6 +108,30 @@ export default function Landing() {
         </div>
       </section>
 
+      {/* Capability strip */}
+      <section className="mt-8 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <Capability
+          glyph="◉"
+          title={t("home.cap.analysts.title")}
+          desc={t("home.cap.analysts.desc")}
+        />
+        <Capability
+          glyph="◈"
+          title={t("home.cap.markets.title")}
+          desc={t("home.cap.markets.desc")}
+        />
+        <Capability
+          glyph="⬡"
+          title={t("home.cap.onchain.title")}
+          desc={t("home.cap.onchain.desc")}
+        />
+        <Capability
+          glyph="◍"
+          title={t("home.cap.open.title")}
+          desc={t("home.cap.open.desc")}
+        />
+      </section>
+
       {/* One-click presets */}
       <section className="mt-14">
         <div className="mb-6 flex items-end justify-between">
@@ -135,6 +159,7 @@ export default function Landing() {
               disabled={starting}
               className="surface surface-hover group relative overflow-hidden p-5 text-left disabled:opacity-50"
             >
+              <div className="absolute inset-x-0 top-0 h-[2px] bg-accent-gradient opacity-0 transition-opacity duration-200 group-hover:opacity-100" />
               <div className="absolute right-4 top-4 text-[10px] font-mono uppercase tracking-wider text-dim">
                 {p.region}
               </div>
@@ -191,6 +216,28 @@ export default function Landing() {
           </div>
         </div>
       </section>
+    </div>
+  );
+}
+
+function Capability({
+  glyph,
+  title,
+  desc,
+}: {
+  glyph: string;
+  title: string;
+  desc: string;
+}) {
+  return (
+    <div className="surface surface-hover flex items-center gap-3.5 p-4">
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-[var(--border-strong)] bg-[rgba(139,92,246,0.10)] text-base text-accent">
+        {glyph}
+      </span>
+      <div className="min-w-0">
+        <p className="text-[13.5px] font-semibold tracking-tight">{title}</p>
+        <p className="mt-0.5 truncate text-[11.5px] text-dim">{desc}</p>
+      </div>
     </div>
   );
 }

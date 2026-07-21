@@ -115,6 +115,26 @@ export const MESSAGES: Dict = {
     zh: "无法连接后端 API。请在终端执行 ./start.sh 启动服务，然后刷新本页。",
     en: "Cannot reach the research API. Run ./start.sh in a terminal, then refresh.",
   },
+  "home.cap.analysts.title": { zh: "18 位 AI 分析师", en: "18 AI analysts" },
+  "home.cap.analysts.desc": {
+    zh: "4 位核心 + 14 位大师模型并行投票",
+    en: "4 core + 14 master models vote in parallel",
+  },
+  "home.cap.markets.title": { zh: "三大市场", en: "3 markets" },
+  "home.cap.markets.desc": {
+    zh: "美股 · 港股 · A 股实时行情",
+    en: "US · HK · CN live market data",
+  },
+  "home.cap.onchain.title": { zh: "链上可审计", en: "On-chain auditable" },
+  "home.cap.onchain.desc": {
+    zh: "信号哈希上链 + NAV 金库",
+    en: "Signal hashes + NAV vault",
+  },
+  "home.cap.open.title": { zh: "开源 · 双语", en: "Open-source · bilingual" },
+  "home.cap.open.desc": {
+    zh: "MIT 许可 · 中文 / English 全站切换",
+    en: "MIT licensed · full 中文 / EN switch",
+  },
   "home.how.title": { zh: "它是怎么运作的？", en: "How does it work?" },
   "home.how.step1.title": { zh: "公开行情接入", en: "Public market-data layer" },
   "home.how.step1.body": {
